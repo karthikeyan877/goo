@@ -1,0 +1,211 @@
+#include <Wire.h>
+#include <Adafruit_MPU6050.h>
+#include <Adafruit_Sensor.h>
+#include <LiquidCrystal.h>
+LiquidCrystal lcd(7,6,5,4,3,2);
+Adafruit_MPU6050 mpu;
+//Rain Sensor
+int soil_moi,sensor_analog1;
+const int sensor_pin1 = A2;
+//Rain Sensor
+int rain_level,sensor_analog2;
+const int sensor_pin2 = A3;
+int buzzer = 13;
+float xx = 0;
+float yy = 0;
+float zz = 0;
+#include <TinyGPS++.h>
+TinyGPSPlus gps;
+#include <SoftwareSerial.h>
+// Choose two Arduino pins to use for software serial
+int RXPin = 10;
+int TXPin = 11;
+int GSMBaud = 9600;
+// Create a software serial port called "gpsSerial"
+SoftwareSerial gsmSerial(RXPin, TXPin);
+int count1 = 0;
+void setup() {
+ // put your setup code here, to run once:
+ pinMode(sensor_pin1, INPUT);
+ pinMode(sensor_pin2, INPUT);
+ 
+ pinMode(buzzer, OUTPUT);
+ Serial.begin(9600);
+ gsmSerial.begin(9600);
+ 
+ lcd.begin(16, 2); //LCD Initialize
+ lcd.clear();
+ 
+ lcd.setCursor(0,0);
+lcd.print(" LANDSLIDE ");
+ lcd.setCursor(0,1);
+ lcd.print("MONITORING LORA");
+ delay(1000);
+ 
+ if (!mpu.begin()) {
+ lcd.setCursor(0,1);
+ lcd.print(" MPU6050 Failed ");
+ while (1) {
+ delay(10);
+ }
+ }
+ 
+ delay(1000);
+ digitalWrite(buzzer, HIGH);
+ 
+ //setupt motion detection
+ mpu.setHighPassFilter(MPU6050_HIGHPASS_0_63_HZ);
+ mpu.setMotionDetectionThreshold(1);
+ mpu.setMotionDetectionDuration(20);
+ mpu.setInterruptPinLatch(true); // Keep it latched. Will turn off when 
+reinitialized.
+ mpu.setInterruptPinPolarity(true);
+ mpu.setMotionInterrupt(true);
+ delay(250);
+ digitalWrite(buzzer, LOW);
+lcd.clear();
+}
+void loop() {
+ // put your main code here, to run repeatedly:
+ // GPS Data
+ while (gsmSerial.available() > 0){
+ gps.encode(gsmSerial.read());
+ if (gps.location.isUpdated()){
+ }
+ }
+ //Soil Moisture 
+ sensor_analog1 = analogRead(sensor_pin1);
+ soil_moi = ( 100 - ( (sensor_analog1/1023.00) * 100 ) );
+ // Rain Sensor
+ sensor_analog2 = analogRead(sensor_pin2);
+ rain_level = ( 100 - ( (sensor_analog2/1023.00) * 100 ) );
+ 
+ lcd.setCursor(0,0);
+ lcd.print("S:");
+ lcd.print(soil_moi);
+ lcd.print(" ");
+lcd.setCursor(6,0);
+ lcd.print("R:");
+ lcd.print(rain_level);
+ lcd.print(" "); 
+ sensors_event_t a, g, temp;
+ mpu.getEvent(&a, &g, &temp);
+ xx = a.acceleration.x;
+ yy = a.acceleration.y;
+ zz = a.acceleration.z;
+ lcd.setCursor(0,1);
+ lcd.print("X:");
+ lcd.print(xx);
+ lcd.print(" "); 
+ 
+ lcd.setCursor(6,1);
+ lcd.print("Y:");
+ lcd.print(yy);
+ lcd.print(" ");
+ lcd.setCursor(12,1);
+ lcd.print("Z:");
+ lcd.print(zz);
+ lcd.print(" ");
+lcd.setCursor(12,0);
+ lcd.print(gps.location.lat(), 1);
+ lcd.print(",");
+ lcd.print(gps.location.lng(), 1);
+ Serial.print(soil_moi);
+ Serial.print(" ");
+ Serial.print(rain_level);
+ Serial.print(" ");
+ Serial.print(xx);
+ Serial.print(" ");
+ Serial.print(yy);
+ Serial.print(" ");
+ Serial.print(zz);
+ Serial.println();
+ if(soil_moi >= 80 || rain_level >= 80){
+ digitalWrite(buzzer, HIGH);
+ delay(100);
+ digitalWrite(buzzer, LOW);
+ if(count1 == 0){
+ gsm_msg(1);
+ count1++;
+ }
+ }
+else if(xx >= 5 && xx <= -5){
+ digitalWrite(buzzer, HIGH);
+ delay(100);
+ digitalWrite(buzzer, LOW);
+ if(count1 == 0){
+ gsm_msg(1);
+ count1++;
+ }
+ }
+ else if(yy >= 5 && yy <= -5){
+ digitalWrite(buzzer, HIGH);
+ delay(100);
+ digitalWrite(buzzer, LOW);
+ if(count1 == 0){
+ gsm_msg(1);
+ count1++;
+ }
+ }
+ delay(1000);
+}
+void gsm_msg(int a)
+{
+ lcd.setCursor(8,1);
+lcd.print("SDG.");
+ delay(100);
+ gsmSerial.println("AT");
+ delay(500);
+ gsmSerial.println("AT+CMGF=1"); //To send SMS in Text Mode
+ digitalWrite(buzzer, HIGH);
+ delay(1000);
+ //
+ if (a == 1){
+ gsmSerial.println("AT+CMGS=\"+919865729170\"\r"); // change to the 
+phone number you using
+ lcd.setCursor(8,1);
+ lcd.print("SDG..1");
+ delay(100);
+ //Serial.println("1 SMS..."); 
+ }
+ else if(a == 2){
+ gsmSerial.println("AT+CMGS=\"+91\"\r"); // change to the phone 
+number you using 
+ lcd.setCursor(8,1);
+ lcd.print("SDG..2");
+ delay(100);
+ }
+ else if(a == 3){
+ gsmSerial.println("AT+CMGS=\"+91\"\r"); // change to the phone 
+number you using
+lcd.setCursor(8,1);
+ lcd.print("SDG..3");
+ delay(100);
+ }
+ 
+ digitalWrite(buzzer, LOW);
+ delay(2000);
+ lcd.setCursor(8,1);
+ lcd.print("SDG..");
+ //SMS Content
+ gsmSerial.print("Emergency Alert..! 
+http://www.google.com/maps/place/");//the content of the message
+ gsmSerial.print(gps.location.lat(), 6);
+ gsmSerial.print(",");
+ gsmSerial.print(gps.location.lng(), 6);
+ delay(500);
+ lcd.setCursor(8,1);
+ lcd.print("SDG...");
+ delay(1000);
+ gsmSerial.println((char)26);//the stopping character
+ delay(2000);
+ digitalWrite(buzzer, HIGH);
+ lcd.setCursor(8,1);
+ lcd.print("SMS SENT....");
+ delay(1000);
+lcd.setCursor(8,1);
+ lcd.print(" ");
+ delay(100);
+ digitalWrite(buzzer, LOW); 
+ 
+}
